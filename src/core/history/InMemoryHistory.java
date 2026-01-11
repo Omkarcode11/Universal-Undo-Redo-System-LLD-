@@ -1,11 +1,19 @@
 package core.history;
 
+import core.interfaces.BoundedHistory;
 import core.interfaces.Command;
 import java.util.Stack;
 
-public class InMemoryHistory implements CommandHistory {
+public class InMemoryHistory implements CommandHistory, BoundedHistory {
 
     private Stack<Command> stack = new Stack<>();
+
+    public void pushWithLimit(Command command, int maxLimit) {
+        while (stack.size() >= maxLimit) {
+            stack.removeElementAt(0);
+        }
+        stack.push(command);
+    }
 
     public void push(Command command) {
         stack.push(command);

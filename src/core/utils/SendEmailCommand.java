@@ -2,18 +2,22 @@ package core.utils;
 
 public class SendEmailCommand extends AbstractCommand {
 
-    private final String email;
-    private final String content;
+    private final String subject;
+    private final String to;
+    private final String body;
 
-    public SendEmailCommand(String email, String content){
-        this.email = email;
-        this.content = content;
+    public SendEmailCommand(String to, String subject, String body) {
+        this.to = to;
+        this.subject = subject;
+        this.body = body;
     }
 
     @Override
+
     public void execute() {
-        // TODO Auto-generated method stub
-        System.out.println("mail send")
+        System.out.println("Sending email to: " + to);
+        System.out.println("Subject: " + subject);
+        System.out.println("Body: " + body);
     }
 
     @Override
@@ -21,8 +25,8 @@ public class SendEmailCommand extends AbstractCommand {
         throw new UnsupportedOperationException("Unimplemented method 'undo'");
     }
 
-    public void redo(){
-        throw new UnsupportedOperationException("Unimplemented method 'redo'");
+    public void redo() {
+        execute();
     }
-    
+
 }
