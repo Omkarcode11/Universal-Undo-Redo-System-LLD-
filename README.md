@@ -1,138 +1,186 @@
 # Universal Undo-Redo System (LLD)
 
-A robust, thread-safe, and extensible Undo-Redo system built using the **Command Pattern**. This system allows you to manage any sequence of operations with support for history limiting, thread safety, and custom command implementations.
+A professional-grade, thread-safe, and highly extensible Undo-Redo system built using the **Command Design Pattern**. This architecture is designed to handle complex state management in applications (like text editors, file systems, or financial tools) while maintaining strict decoupling and memory efficiency.
 
-## 🏗 System Architecture (Mermaid)
+---
+
+## 🏛️ Deep Dive Architecture
+
+### 1. Detailed Class Diagram
+This diagram shows the static structure of the system, highlighting the interfaces, their implementations, and the relationships that enable decoupling.
 
 ```mermaid
 classDiagram
-    class Command {
-        <<interface>>
-        +execute()
-        +undo()
-        +redo()
+    namespace Core_Interfaces {
+        class Command {
+            <<interface>>
+            +execute()*
+            +undo()*
+            +redo()*
+        }
+        class Undoable {
+            <<interface>> 
+            Note: Marker for tracking
+        }
+        class BoundedHistory {
+            <<interface>>
+            +pushWithLimit(Command, int)*
+        }
+        class Serializable~T~ {
+            <<interface>>
+            +serializable() T*
+        }
     }
 
-    class Undoable {
-        <<interface>>
+    namespace History_Management {
+        class CommandHistory {
+            <<interface>>
+            +push(Command)*
+            +pop() Command*
+            +isEmpty() boolean*
+            +clear()*
+        }
+        class InMemoryHistory {
+            -Stack~Command~ stack
+            +push(Command)
+            +pop() Command
+            +pushWithLimit(Command, int)
+        }
     }
 
-    class CommandHistory {
-        <<interface>>
-        +push(Command)
-        +pop() Command
-        +isEmpty() boolean
-        +clear()
+    namespace Execution_Control {
+        class UndoRedoManager {
+            -CommandHistory undoHistory
+            -CommandHistory redoHistory
+            -CommandExecutor commandExecutor
+            -Mutex mutex
+            +execute(Command)
+            +undo()
+            +redo()
+            +clearHistory()
+        }
+        class CommandExecutor {
+            +execute(Command)
+        }
+        class Mutex {
+            -ReentrantLock lock
+            +lock()
+            +unlock()
+        }
     }
 
-    class BoundedHistory {
-        <<interface>>
-        +pushWithLimit(Command, int)
-    }
-
-    class UndoRedoManager {
-        -undoHistory: CommandHistory
-        -redoHistory: CommandHistory
-        -commandExecutor: CommandExecutor
-        -mutex: Mutex
-        +execute(Command)
-        +undo()
-        +redo()
-        +clearHistory()
-    }
-
-    class CommandExecutor {
-        +execute(Command)
-    }
-
-    class InMemoryHistory {
-        -stack: Stack~Command~
-        +push(Command)
-        +pop() Command
-    }
-
-    class AbstractCommand {
-        <<abstract>>
-        +redo()
-    }
-
-    class DeleteFileCommand {
-        -filePath: String
-        -backupContent: String
-        +execute()
-        +undo()
-    }
-
-    UndoRedoManager --> CommandHistory : manages
-    UndoRedoManager --> CommandExecutor : uses
-    UndoRedoManager --> Mutex : thread-safety
+    UndoRedoManager "1" o-- "2" CommandHistory : manages
+    UndoRedoManager "1" o-- "1" CommandExecutor : delegates
+    UndoRedoManager "1" o-- "1" Mutex : protects
     InMemoryHistory ..|> CommandHistory
     InMemoryHistory ..|> BoundedHistory
     DeleteFileCommand --|> AbstractCommand
     DeleteFileCommand ..|> Undoable
     AbstractCommand ..|> Command
+    SendEmailCommand --|> AbstractCommand
 ```
 
 ---
 
-## 📂 Class Explanations
+### 2. Operational Sequence Diagrams
 
-### 1. Core Interfaces
-- **`Command`**: The base interface for all operations. Every command must define how to `execute()`, `undo()`, and `redo()`.
-- **`Undoable`**: A marker interface. If a command implements this, it tells the `UndoRedoManager` that this command should be tracked in the undo history.
-- **`CommandHistory`**: Defines the contract for storing commands (push, pop, clear).
-- **`BoundedHistory`**: An extension for history implementations that support a maximum size limit (prevents memory issues).
+#### A. Command Execution Workflow
+This diagram illustrates what happens when a user triggers a new action. Notice how the system automatically clears the "Redu" stack and decides whether to track the command based on the `Undoable` interface.
 
-### 2. Management Layer
-- **`UndoRedoManager`**: The brain of the system.
-    - **How it works**: When you `execute()` a command, it uses the `CommandExecutor` to run it. If it's an `Undoable` command, it saves it to the `undoHistory`.
-    - **Undo/Redo**: When `undo()` is called, it pops from undo history, calls `undo()`, and moves it to redo history.
-    - **Thread Safety**: Uses a `Mutex` to ensure that history isn't corrupted when multiple threads execute commands simultaneously.
-- **`CommandExecutor`**: A simple wrapper to trigger the `execute()` method of a command. This decouples the "when" of execution from the "how".
+```mermaid
+sequenceDiagram
+    participant U as Client/User
+    participant M as UndoRedoManager
+    participant X as CommandExecutor
+    participant C as ConcreteCommand
+    participant UH as UndoHistory
+    participant RH as RedoHistory
 
-### 3. Implementations & Utils
-- **`InMemoryHistory`**: A standard implementation using a Java `Stack`. It also supports the `BoundedHistory` interface to remove the oldest commands when the limit is reached.
-- **`AbstractCommand`**: A helper class that provides a default implementation for `redo()` (which usually just calls `execute()`).
-- **`DeleteFileCommand`**: A concrete example of a command.
-    - **Execute**: Removes a file from a mock filesystem and keeps a backup.
-    - **Undo**: Restores the file from the backup.
-- **`Mutex`**: A wrapper around `ReentrantLock` used to ensure only one thread modifies the history at a time.
+    U->>M: execute(command)
+    M->>M: mutex.lock()
+    M->>X: execute(command)
+    X->>C: execute()
+    
+    alt is instance of Undoable
+        M->>UH: push(command)
+        M->>RH: clear()
+        Note over M,RH: Standard Undo logic: New action breaks the redo chain
+    else is not Undoable
+        Note over M: Command executes but won't be tracked
+    end
+    
+    M->>M: mutex.unlock()
+    M-->>U: Success
+```
+
+#### B. The Undo Process
+Shows the step-by-step movement of a command from the Undo stack back to the Redo stack after reversing its effects.
+
+```mermaid
+sequenceDiagram
+    participant U as Client/User
+    participant M as UndoRedoManager
+    participant UH as UndoHistory
+    participant C as ConcreteCommand
+    participant RH as RedoHistory
+
+    U->>M: undo()
+    M->>M: mutex.lock()
+    
+    M->>UH: pop()
+    UH-->>M: command
+    
+    M->>C: undo()
+    Note right of C: Command restores previous state
+    
+    M->>RH: push(command)
+    
+    M->>M: mutex.unlock()
+    M-->>U: State Restored
+```
 
 ---
 
-## 🚀 How to Run Tests
+## 🧩 Detailed Class & Strategy Explanation
 
-The project includes a built-in test runner in `App.java` that validates the logic and provides a JUnit-like summary.
+### **The manager (`UndoRedoManager`)**
+*   **Why**: Centralized control. Without it, the UI would have to manually manage stacks and thread locks.
+*   **What**: It coordinates the two stacks (`undo` and `redo`) and ensures that if one action is undone, it's ready to be redone.
+*   **How**: It uses a **Composition** strategy. It doesn't care how the history is stored (In-Memory, Database, etc.) or how the command works; it only interacts with the `Command` and `CommandHistory` interfaces.
 
-### Compilation
-```bash
-javac -d bin -sourcepath src src/App.java
-```
+### **The History Strategy (`InMemoryHistory`)**
+*   **Why**: Memory management. Storing infinite history leads to `OutOfMemoryError`.
+*   **What**: Implements a Stack-based storage with **History Limiting**.
+*   **How**: When `pushWithLimit` is called, it checks if the stack size exceeds the limit. If it does, it removes the **oldest** element (index 0) before adding the new one. This is a circular-buffer-like behavior using a Stack.
 
-### Execution (with assertions enabled)
-```bash
-java -ea -cp bin App
-```
+### **The Command Abstraction (`AbstractCommand`)**
+*   **Why**: Reduces boilerplate code.
+*   **What**: Most commands treat `redo` exactly like their initial `execute`.
+*   **How**: It provides a default `redo()` implementation that simply calls `execute()`, so concrete commands only need to define `execute` and `undo`.
 
-### Expected Output
+### **Thread Safety (`Mutex`)**
+*   **Why**: Race conditions. If two threads call `undo()` at the exact same millisecond, both might try to pop the same command.
+*   **What**: A wrapper around `ReentrantLock`.
+*   **How**: Every public method in `UndoRedoManager` is wrapped in a `lock()` / `finally { unlock() }` block. This ensures **atomic** operations.
+
+---
+
+## � Project Structure
 ```text
-==========================================
-       Running Undo-Redo System Tests       
-==========================================
-
-Running: Test Basic Execute and Undo ... PASSED
-Running: Test Redo Functionality ... PASSED
-...
-------------------------------------------
-Tests Finished!
-Passed: 6
-Failed: 0
-------------------------------------------
+src/core/
+├── exceptions/    # Custom errors (UndoNotSupported, etc.)
+├── history/       # Implementations of Command storage
+├── interfaces/    # The "Contract" (Command, Undoable, Bounded)
+├── manager/       # The brain (UndoRedoManager, Executor)
+└── utils/         # Concrete commands and helpers (Mutex, Limiter)
 ```
 
-## 🛠 Features
-- ✅ **Undo/Redo**: Full state management.
-- ✅ **Thread Safe**: Safe for concurrent environments.
-- ✅ **History Limiting**: Prevents memory leaks by capping history size.
-- ✅ **Selective Tracking**: Only commands marked as `Undoable` are tracked.
-- ✅ **Clean Architecture**: Highly decoupled and easy to extend.
+## 🚀 Testing & Validation
+The system includes a custom test runner in `App.java` that simulates real-world usage:
+1.  **Compile**: `javac -d bin -sourcepath src src/App.java`
+2.  **Run**: `java -ea -cp bin App`
+
+### Key Test Scenarios:
+- **Redo Chain Break**: Validates that executing a new command after an undo clears the redo history.
+- **Exception Safety**: Ensures the system doesn't crash if you try to undo/redo with an empty history.
+- **Marker Interface Logic**: Validates that commands *not* implements `Undoable` are ignored by the history tracker.
